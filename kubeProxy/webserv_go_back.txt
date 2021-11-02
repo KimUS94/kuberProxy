@@ -1,0 +1,190 @@
+package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"os/exec"
+	"strings"
+	"time"
+)
+
+var top_nodes string
+var get_pods_allnamespaces string
+
+var get_master string
+var get_node1 string
+var get_node2 string
+
+var describe_node1 string
+var describe_node2 string
+var describe_master string
+
+var get_master_json string
+var get_node1_json string
+var get_node2_json string
+
+func main() {
+	http.Handle("/", new(staticHandler))
+
+	go PollingCluster()
+
+	http.ListenAndServe(":5000", nil)
+}
+
+type staticHandler struct {
+	http.Handler
+}
+
+func GetHttprRequestBody(r *http.Request) string {
+	len := r.ContentLength
+	body := make([]byte, len)
+	r.Body.Read(body)
+
+	return string(body)
+}
+
+func PostMethodHandler(req *http.Request) string {
+	var response string
+	var request string
+	var data string
+
+	request = string(req.URL.Path)
+	request = strings.TrimLeft(request, "/")
+
+	parms := strings.Split(request, "/")
+
+	data = GetHttprRequestBody(req)
+
+	//"{\"data\":{\"email\":\"qwer\",\"password\":\"123\"}}"
+	switch parms[0] {
+	case "singin":
+		bytes := []byte(data)
+		var temp map[string]interface{}
+		json.Unmarshal([]byte(bytes), &temp)
+		fmt.Println(temp["email"])
+
+		//TODO:
+		response = "Sign Success"
+
+	case "create_deployment":
+		fileName := "/home/master/workplace/kubernetes/dummygo/" + data
+		response = ExecuteCommad("kubectl", "apply", "-f", fileName)
+
+	default:
+		var temp []string
+		if len(parms) < 2 {
+			response = ExecuteCommad(parms[0], temp...)
+		} else if len(parms) >= 2 {
+			for i := 1; i < len(parms); i++ {
+				temp = append(temp, parms[i])
+			}
+
+			temp = append(temp, data)
+			response = ExecuteCommad(parms[0], temp...)
+		}
+	}
+
+	return response
+}
+
+func GetMethodHandler(request string) string {
+	var response string
+	parms := strings.Split(request, "/")
+
+	switch parms[0] {
+	case "top_nodes":
+		response = top_nodes
+	case "get_node_master":
+		response = get_master
+	case "get_node_node1":
+		response = get_node1
+	case "get_node_node2":
+		response = get_node2
+	case "describe_node_master":
+		response = describe_master
+	case "describe_node_node1":
+		response = describe_node1
+	case "describe_node_node2":
+		response = describe_node2
+	case "get_json_master":
+		response = get_master_json
+	case "get_json_node1":
+		response = get_node1_json
+	case "get_json_node2":
+		response = get_node2_json
+	case "get_pods_allnamespaces":
+		response = get_pods_allnamespaces
+	case "git_add_dot":
+		response = ExecuteCommad("git", "add", ".")
+	case "git_commit_m":
+		response = ExecuteCommad("git", "commit", "-m", parms[1])
+
+	default:
+		var temp []string
+		if len(parms) < 2 {
+			response = ExecuteCommad(parms[0], temp...)
+		} else if len(parms) >= 2 {
+			for i := 1; i < len(parms); i++ {
+				temp = append(temp, parms[i])
+			}
+			response = ExecuteCommad(parms[0], temp...)
+		}
+	}
+
+	return response
+}
+
+func (h *staticHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	var request string
+	var response string
+
+	request = string(req.URL.Path)
+	request = strings.TrimLeft(request, "/")
+
+	if strings.Compare(req.Method, "POST") == 0 {
+		response = PostMethodHandler(req)
+	} else {
+		response = GetMethodHandler(request)
+	}
+
+	w.Write([]byte(response))
+}
+
+func ExecuteCommad(cmdType string, args ...string) string {
+	var res string
+
+	cmd := exec.Command(cmdType, args...)
+	output, err := cmd.Output()
+	if err != nil {
+		res = string("err")
+		//return string("err")
+	} else {
+		res = string(output)
+		//return string(output)
+	}
+
+	return res
+}
+
+func PollingCluster() {
+	for {
+
+		top_nodes = ExecuteCommad("kubectl", "top", "nodes")
+		get_pods_allnamespaces = ExecuteCommad("kubectl", "get", "pod", "--all-namespaces", "-o", "wide")
+
+		get_master = ExecuteCommad("kubectl", "get", "node", "master")
+		get_node1 = ExecuteCommad("kubectl", "get", "node", "node1")
+		get_node2 = ExecuteCommad("kubectl", "get", "node", "node2")
+
+		describe_master = ExecuteCommad("kubectl", "describe", "node", "master")
+		describe_node1 = ExecuteCommad("kubectl", "describe", "node", "node1")
+		describe_node2 = ExecuteCommad("kubectl", "describe", "node", "node2")
+
+		get_master_json = ExecuteCommad("kubectl", "get", "node", "master", "-o", "json")
+		get_node1_json = ExecuteCommad("kubectl", "get", "node", "node1", "-o", "json")
+		get_node2_json = ExecuteCommad("kubectl", "get", "node", "node2", "-o", "json")
+
+		time.Sleep(time.Second * 5)
+	}
+}
